@@ -1,8 +1,19 @@
 #!/usr/bin/env python3
 """
 HEIMDALL — Data Logger
-Records live 8x8 depth frames from VL53L8CX to a timestamped CSV file.
-Usage: ~/venv/bin/python3 scripts/logger.py [optional_label]
+Records live 8x8 depth frames from VL53L8CX to a timestamped CSV.
+
+Usage:
+    ~/venv/bin/python3 scripts/logger.py [label]
+
+CSV columns:
+    timestamp   — real wall-clock time HH:MM:SS.mmm  (matches Timestamp Camera video)
+    z0_0..z7_7  — 64 depth zones in mm, row-major order
+
+Sync method:
+    Record iPhone video with 'Timestamp Camera' app.
+    Wave hand in front of sensor for 2s at start of each scenario.
+    In video: see wave + clock time. In CSV: find the distance spike at that time.
 """
 
 import csv
@@ -28,14 +39,14 @@ os.makedirs(log_dir, exist_ok=True)
 ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 filename = f"{log_dir}/{label}_{ts}.csv"
 
-# CSV columns: time_ms, z0_0 ... z7_7 (row-major, 64 zones)
-header = ["time_ms"] + [f"z{r}_{c}" for r in range(8) for c in range(8)]
+# CSV header
+header = ["timestamp"] + [f"z{r}_{c}" for r in range(8) for c in range(8)]
 
 print(f"\n🔱 HEIMDALL Logger")
-print(f"📡 Output → {filename}")
-print(f"ℹ️  Label : {label}")
-print(f"\n👋 WAVE YOUR HAND NOW to mark T=0 sync point")
-print(f"   Then hold still and begin scenario.\n")
+print(f"📡 Output  → {filename}")
+print(f"🏷️  Label   → {label}")
+print(f"🕐 Started → {datetime.datetime.now().strftime('%H:%M:%S')}")
+print(f"\n👋 Wave hand in front of sensor to mark each scenario start")
 print(f"   Ctrl+C to stop.\n")
 
 # -------------------------------------------------------------------
@@ -45,7 +56,6 @@ with open(filename, "w", newline="") as f:
     writer = csv.writer(f)
     writer.writerow(header)
 
-    start = time.monotonic()
     frame = 0
 
     try:
@@ -53,16 +63,16 @@ with open(filename, "w", newline="") as f:
             if sensor.data_ready():
                 data = sensor.get_data()
                 distances = list(data.distance_mm[0][:64])
-                elapsed_ms = int((time.monotonic() - start) * 1000)
+                now = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
 
-                writer.writerow([elapsed_ms] + distances)
-                f.flush()  # Ensure data is written even if killed externally
+                writer.writerow([now] + distances)
+                f.flush()
 
                 frame += 1
                 min_d = min(distances)
                 max_d = max(distances)
                 print(
-                    f"\r✅ Frame {frame:5d} | {elapsed_ms:7d}ms | "
+                    f"\r✅ Frame {frame:5d} | {now} | "
                     f"Min: {min_d:4d}mm  Max: {max_d:4d}mm",
                     end=""
                 )
@@ -70,6 +80,6 @@ with open(filename, "w", newline="") as f:
             time.sleep(0.001)
 
     except KeyboardInterrupt:
-        print(f"\n\n🛑 Stopped.")
-        print(f"   {frame} frames written → {filename}")
-        print(f"   Duration: {int((time.monotonic() - start))}s\n")
+        stop_time = datetime.datetime.now().strftime("%H:%M:%S")
+        print(f"\n\n🛑 Stopped at {stop_time}")
+        print(f"   {frame} frames written → {filename}\n")
